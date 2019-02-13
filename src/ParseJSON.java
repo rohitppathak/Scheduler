@@ -12,7 +12,7 @@ public final class ParseJSON {
     ArrayList<Unavailability> unavailabilityItems = new ArrayList<>();
 
     String json = new GetRequest(
-        "https://api.wheniwork.com/2/availabilities/items?start=2019-01-14 00:00:00&end=2019-01-18 23:59:59")
+        "https://api.wheniwork.com/2/availabilities/items?start=2019-01-21 00:00:00&end=2019-01-25 23:59:59")
         .getOutput();
     JSONObject list = new JSONObject(json);
     JSONArray items = list.getJSONArray("availabilityitems");

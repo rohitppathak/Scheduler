@@ -99,6 +99,7 @@ public class Scheduler {
     // TODO make sure this doesn't go over the end time
     schedule.add(toSchedule);
     curAvail.employee.minutesWorked += (endingMinute - toSchedule.startMinute);
+    fixPastConflicts(schedule, startMinute, toSchedule.employee);
   }
 
   /**
@@ -112,7 +113,22 @@ public class Scheduler {
    * @param curAvail the availability to compare
    */
   public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail) {
-    int penalty = curAvail.startMinute - shiftConflict.startMinute;
+    return shouldSwitch(shiftConflict, curAvail, curAvail.startMinute);
+  }
+
+  /**
+   * Should the shiftConflict be taken out of the schedule and replaced with a new Shift from
+   * curAvail? This is computed by comparing how many hours each employee has worked, and if
+   * switching would make a more equal amount of hours for both employee while taking into
+   * consideration the hours that might be lost when switching shifts (e.g. there should not be a
+   * one hour shift).
+   *
+   * @param shiftConflict the currently scheduled Shift
+   * @param curAvail the availability to compare
+   * @param startMinute the potential start time of the new shift
+   */
+  public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail, int startMinute) {
+    int penalty = startMinute - shiftConflict.startMinute;
     int soFar = Math
         .abs(shiftConflict.employee.minutesWorked - curAvail.employee.minutesWorked);
     soFar -= penalty;
@@ -130,23 +146,41 @@ public class Scheduler {
    * @param curAvail the availability from which to create a new shift from
    * @param day the day to create the shift
    * @param startMinute the minute to start the shift
+   * @param endMinute the minute to end the shift
    */
   public static void switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
-      int day, int startMinute) {
+      int day, int startMinute, int endMinute) {
+    int toInsert = schedule.indexOf(shiftConflict);
     schedule.remove(shiftConflict);
     shiftConflict.associatedAvailability.scheduledShifts.remove(shiftConflict);
     shiftConflict.employee.minutesWorked -= (shiftConflict.endMinute
         - shiftConflict.startMinute);
-    int endingMinute = Math.min(curAvail.endMinute, startMinute + 120);
     Shift toSchedule = new Shift(0, day, startMinute,
-        endingMinute, curAvail.employee, "Front Desk");
+        endMinute, curAvail.employee, "Front Desk");
     toSchedule.conflicts.add(shiftConflict.associatedAvailability);
     toSchedule.associatedAvailability = curAvail;
     curAvail.scheduledShifts.add(toSchedule);
-    schedule.add(toSchedule);
-    curAvail.employee.minutesWorked += (endingMinute - toSchedule.startMinute);
+    schedule.add(toInsert, toSchedule);
+    curAvail.employee.minutesWorked += (endMinute - toSchedule.startMinute);
     curAvail.inSchedule = true;
     shiftConflict.associatedAvailability.inSchedule = false;
+    fixPastConflicts(schedule, startMinute, toSchedule.employee);
+  }
+
+  /**
+   * Remove shiftConflict from schedule and replace it with a shift made from curAvail on the given
+   * day at the given startMinute. The new shift will have a duration of 120 minutes.
+   *
+   * @param schedule the current schedule so far
+   * @param shiftConflict the shift to remove
+   * @param curAvail the availability from which to create a new shift from
+   * @param day the day to create the shift
+   * @param startMinute the minute to start the shift
+   */
+  public static void switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
+      int day, int startMinute) {
+    int endingMinute = Math.min(curAvail.endMinute, startMinute + 120);
+    switchShift(schedule, shiftConflict, curAvail, day, startMinute, endingMinute);
   }
 
   public static void scheduleFrontDesk() {
@@ -168,7 +202,8 @@ public class Scheduler {
             }
           }
           if (onlyFrontDesk.get(i).inSchedule) {
-            if (checkForExtendedShift(onlyFrontDesk.get(i), day, startMinute)) {
+            if (checkForExtendedShift(onlyFrontDesk.get(i), day, startMinute)
+                && onlyFrontDesk.get(i).endMinute - startMinute > 0) {
               availables.add(onlyFrontDesk.get(i));
             }
           }
@@ -248,12 +283,64 @@ public class Scheduler {
     }
   }
 
-  public static void fixPastConflicts(List<Shift> schedule, int startMinute, Employee justScheduled) {
-    for (int min = startMinute; min >= 480; min -= 15) {
-      
+  /**
+   * Iterates backward through the current schedule and switches shifts when appropriate. This is
+   * used mainly when we have scheduled an employee, and now we need to go back and make the
+   * schedule fairer, which means finding all the shifts that this newly scheduled employee has, and
+   * switching them for other shifts which would balance the hours between employees.
+   *
+   * @param startMinute the minute to iterate backward from and the start minute of the newest shift
+   * was scheduled
+   * @param justScheduled the employee to potentially drop shifts for in order to make a fairer
+   * schedule
+   */
+  public static void fixPastConflicts(List<Shift> schedule, int startMinute,
+      Employee justScheduled) {
+    int index = 0;
+    for (index = 0; index < schedule.size(); index++) {
+      if (schedule.get(index).startMinute == startMinute) {
+        break;
+      }
+    }
+    for (int i = index - 1; i >= 0; i--) {
+      if (schedule.get(i).employee == justScheduled && !schedule.get(i).conflicts.isEmpty()) {
+        int[] potentialTimes = findNewPotentialStartTime(schedule, i,
+            schedule.get(i).conflicts.get(0));
+        int potentialStartTime = potentialTimes[0];
+        int potentialEndTime = potentialTimes[1];
+
+        // if adding this shift will cause the employee to work more than 5 hours
+        if (i > 0 && schedule.get(i).day == schedule.get(i - 1).day
+            && schedule.get(i - 1).employee == schedule.get(i).conflicts.get(0).employee
+            && schedule.get(i - 1).endMinute + 15 == potentialStartTime
+            && potentialEndTime - schedule.get(i - 1).startMinute > 300) {
+          continue;
+        }
+        if (i < schedule.size() - 1 && schedule.get(i).day == schedule.get(i + 1).day
+            && schedule.get(i + 1).employee == schedule.get(i).conflicts
+            .get(0).employee
+            && schedule.get(i + 1).startMinute - 15 == potentialEndTime
+            && schedule.get(i - 1).endMinute - potentialStartTime > 300) {
+          continue;
+        }
+
+        if (shouldSwitch(schedule.get(i), schedule.get(i).conflicts.get(0), potentialStartTime)) {
+          switchShift(schedule, schedule.get(i), schedule.get(i).conflicts.get(0),
+              schedule.get(i).day, potentialStartTime, potentialEndTime);
+        }
+      }
     }
   }
 
+  private static int[] findNewPotentialStartTime(List<Shift> schedule, int index,
+      Availability availability) {
+    int potentialStartTime = availability.startMinute;
+    if (index > 0 && schedule.get(index).day == schedule.get(index - 1).day) {
+      potentialStartTime = Math.max(potentialStartTime, schedule.get(index - 1).endMinute + 15);
+    }
+    int potentialEnd = Math.min(availability.endMinute, schedule.get(index).endMinute);
+    return new int[]{potentialStartTime, potentialEnd};
+  }
 
 
   /**
@@ -291,7 +378,8 @@ public class Scheduler {
           < availabilityWithLeastEmployeeWorked.employee.minutesWorked) {
         availabilityWithLeastEmployeeWorked = availabilities.get(i);
       } else if (availabilities.get(i).employee.minutesWorked
-          == availabilityWithLeastEmployeeWorked.employee.minutesWorked && availabilities.get(i).inSchedule) {
+          == availabilityWithLeastEmployeeWorked.employee.minutesWorked && availabilities
+          .get(i).inSchedule) {
         availabilityWithLeastEmployeeWorked = availabilities.get(i);
       }
     }
@@ -312,6 +400,7 @@ public class Scheduler {
       if (availability.endMinute >= startMinute + 15 && toExtend.getDuration() < 300) {
         toExtend.endMinute = startMinute + 15;
         toExtend.employee.minutesWorked += 15;
+        fixPastConflicts(schedule, toExtend.startMinute, toExtend.employee);
       }
     }
   }
