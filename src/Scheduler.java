@@ -99,7 +99,7 @@ public class Scheduler {
     // TODO make sure this doesn't go over the end time
     schedule.add(toSchedule);
     curAvail.employee.minutesWorked += (endingMinute - toSchedule.startMinute);
-    fixPastConflicts(schedule, startMinute, toSchedule.employee);
+    fixPastConflicts(schedule, day, startMinute, toSchedule.employee);
   }
 
   /**
@@ -111,9 +111,12 @@ public class Scheduler {
    *
    * @param shiftConflict the currently scheduled Shift
    * @param curAvail the availability to compare
+   * @param accountForEndTime whether to compare how much potential each availability has to extend
+   * its end time
    */
-  public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail) {
-    return shouldSwitch(shiftConflict, curAvail, curAvail.startMinute);
+  public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail,
+      boolean accountForEndTime) {
+    return shouldSwitch(shiftConflict, curAvail, curAvail.startMinute, accountForEndTime);
   }
 
   /**
@@ -126,12 +129,19 @@ public class Scheduler {
    * @param shiftConflict the currently scheduled Shift
    * @param curAvail the availability to compare
    * @param startMinute the potential start time of the new shift
+   * @param accountForEndTime whether to compare how much potential each availability has to extend
+   * its end time
    */
-  public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail, int startMinute) {
+  public static boolean shouldSwitch(Shift shiftConflict, Availability curAvail, int startMinute,
+      boolean accountForEndTime) {
     int penalty = startMinute - shiftConflict.startMinute;
     int soFar = Math
         .abs(shiftConflict.employee.minutesWorked - curAvail.employee.minutesWorked);
     soFar -= penalty;
+    if (accountForEndTime) {
+      int potential = curAvail.endMinute - shiftConflict.associatedAvailability.endMinute;
+      soFar += potential;
+    }
     return (Math.abs(shiftConflict.employee.minutesWorked - shiftConflict.getDuration()
         - curAvail.employee.minutesWorked - 120) < soFar);
   }
@@ -139,7 +149,7 @@ public class Scheduler {
 
   /**
    * Remove shiftConflict from schedule and replace it with a shift made from curAvail on the given
-   * day at the given startMinute. The new shift will have a duration of 120 minutes.
+   * day at the given startMinute, ending at at endMinute.
    *
    * @param schedule the current schedule so far
    * @param shiftConflict the shift to remove
@@ -164,7 +174,7 @@ public class Scheduler {
     curAvail.employee.minutesWorked += (endMinute - toSchedule.startMinute);
     curAvail.inSchedule = true;
     shiftConflict.associatedAvailability.inSchedule = false;
-    fixPastConflicts(schedule, startMinute, toSchedule.employee);
+    fixPastConflicts(schedule, day, startMinute, toSchedule.employee);
   }
 
   /**
@@ -244,7 +254,7 @@ public class Scheduler {
               continue; // if the availability and its conflict has already been accounted for
             }
             if (shiftConflict.maxEnding >= curAvail.endMinute) {
-              if (shouldSwitch(shiftConflict, curAvail)) {
+              if (shouldSwitch(shiftConflict, curAvail, false)) {
                 switchShift(schedule, shiftConflict, curAvail, day, startMinute);
               } else { // if we shouldn't switch it
                 curAvail.inSchedule = false;
@@ -252,7 +262,12 @@ public class Scheduler {
               }
             } else {
               // TODO if the conflict has a greater ending time than the scheduled shift
-
+              if (shouldSwitch(shiftConflict, curAvail, true)) {
+                switchShift(schedule, shiftConflict, curAvail, day, startMinute);
+              } else {
+                curAvail.inSchedule = false;
+                shiftConflict.conflicts.add(curAvail);
+              }
             }
           }
         } else {
@@ -260,12 +275,14 @@ public class Scheduler {
             Availability availabilityWithLeastEmployeeWorked = getAvailabilityWithLeastEmployeeWorked(
                 availables);
             if (availabilityWithLeastEmployeeWorked.inSchedule) {
-              tryToExtendShift(schedule, startMinute, day);
+              tryToExtendShift(schedule, startMinute,
+                  day); // TODO fix this, shifts can be spread thru availabailities
             } else {
               scheduleShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
             }
           } else {
             // TODO if there is more than 1 availability and there is already a shift scheduled
+            System.out.println("here");
           }
         }
       }
@@ -294,11 +311,12 @@ public class Scheduler {
    * @param justScheduled the employee to potentially drop shifts for in order to make a fairer
    * schedule
    */
-  public static void fixPastConflicts(List<Shift> schedule, int startMinute,
+  public static void fixPastConflicts(List<Shift> schedule, int day, int startMinute,
       Employee justScheduled) {
     int index = 0;
     for (index = 0; index < schedule.size(); index++) {
-      if (schedule.get(index).startMinute == startMinute) {
+      if (schedule.get(index).employee == justScheduled && schedule.get(index).day == day
+          && schedule.get(index).startMinute == startMinute) {
         break;
       }
     }
@@ -324,7 +342,8 @@ public class Scheduler {
           continue;
         }
 
-        if (shouldSwitch(schedule.get(i), schedule.get(i).conflicts.get(0), potentialStartTime)) {
+        if (shouldSwitch(schedule.get(i), schedule.get(i).conflicts.get(0), potentialStartTime,
+            false)) {
           switchShift(schedule, schedule.get(i), schedule.get(i).conflicts.get(0),
               schedule.get(i).day, potentialStartTime, potentialEndTime);
         }
@@ -400,7 +419,7 @@ public class Scheduler {
       if (availability.endMinute >= startMinute + 15 && toExtend.getDuration() < 300) {
         toExtend.endMinute = startMinute + 15;
         toExtend.employee.minutesWorked += 15;
-        fixPastConflicts(schedule, toExtend.startMinute, toExtend.employee);
+        fixPastConflicts(schedule, day, toExtend.startMinute, toExtend.employee);
       }
     }
   }
