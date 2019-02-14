@@ -26,23 +26,23 @@ public class Scheduler {
   public static void main(String[] args) throws IOException {
     Scheduler s = new Scheduler();
     Iterator it = s.idToEmployee.entrySet().iterator();
-    while (it.hasNext()) {
+    /*while (it.hasNext()) {
       HashMap.Entry pair = (HashMap.Entry) it.next();
       Employee e = (Employee) pair.getValue();
       Long employeeID = (Long) pair.getKey();
       String avail = "";
-      /*for (int i = 0; i < e.getAvailabilities().size(); i += 1) {
+      *//*for (int i = 0; i < e.getAvailabilities().size(); i += 1) {
         String id = String.valueOf(e.getAvailabilities().get(i).getID());
         avail+=id;
         avail+=" ";
-      }*/
+      }*//*
       double[] ava = parse.countHoursAvailability(employeeID);
       e.softMinHours = (int) ava[0] / 4;
       System.out.println(
           pair.getKey() + " = " + e.getFirstName() + " " + e.getLastName() + "--" + parse
               .countHours(employeeID) + " " + ava[0] + " " + ava[1]);
       System.out.println();
-    }
+    }*/
     scheduleFrontDesk();
   }
 
@@ -277,6 +277,9 @@ public class Scheduler {
             if (availabilityWithLeastEmployeeWorked.inSchedule) {
               tryToExtendShift(schedule, startMinute,
                   day); // TODO fix this, shifts can be spread thru availabailities
+            } else if (canShiftBeMoved(schedule, availabilityWithLeastEmployeeWorked, day,
+                startMinute)) {
+              moveShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
             } else {
               scheduleShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
             }
@@ -298,6 +301,61 @@ public class Scheduler {
               + " -- Employee: " + shift.employee.getFirstName() + " " + shift.employee
               .getLastName() + " -- Minutes worked: " + shift.employee.minutesWorked);
     }
+  }
+
+  /**
+   * Moves the last shift in schedule in order to accommodate another shift made from availability before.
+   * @param schedule the schedule of shifts so far
+   * @param availability the availability to form a new shift from
+   * @param day the day to schedule this new shift
+   * @param startMinute the minute we are currently scheduling for
+   */
+  private static void moveShift(ArrayList<Shift> schedule, Availability availability, int day,
+      int startMinute) {
+    Shift lastShift = schedule.remove(schedule.size() - 1);
+    int toMove = lastShift.startMinute - availability.startMinute;
+    lastShift.startMinute += toMove;
+    lastShift.endMinute += toMove;
+    Shift newShift = new Shift(0, day, availability.startMinute, lastShift.startMinute,
+        availability.employee, "Front desk");
+    schedule.add(newShift);
+    schedule.add(lastShift);
+    availability.inSchedule = true;
+    newShift.associatedAvailability = availability;
+    availability.scheduledShifts.add(newShift);
+    newShift.maxEnding = Math.min(availability.endMinute, availability.startMinute + 300);
+    newShift.conflicts.add(lastShift.associatedAvailability);
+    // TODO make sure this doesn't go over the end time
+    availability.employee.minutesWorked += (newShift.endMinute - newShift.startMinute);
+  }
+
+  /**
+   * If there is a shift in schedule, is it more optimal to move it in order to schedule the given
+   * availability before it?
+   *
+   * @param schedule the current shifts so far
+   * @param availability the availability that should be scheduled next
+   * @param day the day to schedule
+   * @param startMinute the minute that we are currently scheduling for
+   */
+  public static boolean canShiftBeMoved(List<Shift> schedule, Availability availability, int day,
+      int startMinute) {
+    if (!schedule.isEmpty()) {
+      Shift lastShift = schedule.get(schedule.size() - 1);
+      if (lastShift.day == day && lastShift.endMinute == startMinute) {
+        if (schedule.size() >= 2
+            && schedule.get(schedule.size() - 2).day == day
+            && schedule.get(schedule.size() - 2).endMinute > availability.startMinute) {
+          return false;
+        } else {
+          return (lastShift.startMinute
+              - availability.startMinute + (
+              lastShift.associatedAvailability.endMinute - lastShift.endMinute) >= 120);
+        }
+      }
+      return false;
+    }
+    return false;
   }
 
   /**
@@ -330,15 +388,15 @@ public class Scheduler {
         // if adding this shift will cause the employee to work more than 5 hours
         if (i > 0 && schedule.get(i).day == schedule.get(i - 1).day
             && schedule.get(i - 1).employee == schedule.get(i).conflicts.get(0).employee
-            && schedule.get(i - 1).endMinute + 15 == potentialStartTime
+            && schedule.get(i - 1).endMinute == potentialStartTime
             && potentialEndTime - schedule.get(i - 1).startMinute > 300) {
           continue;
         }
         if (i < schedule.size() - 1 && schedule.get(i).day == schedule.get(i + 1).day
             && schedule.get(i + 1).employee == schedule.get(i).conflicts
             .get(0).employee
-            && schedule.get(i + 1).startMinute - 15 == potentialEndTime
-            && schedule.get(i - 1).endMinute - potentialStartTime > 300) {
+            && schedule.get(i + 1).startMinute == potentialEndTime
+            && schedule.get(i + 1).endMinute - potentialStartTime > 300) {
           continue;
         }
 
