@@ -193,6 +193,14 @@ public class Scheduler {
     switchShift(schedule, shiftConflict, curAvail, day, startMinute, endingMinute);
   }
 
+  /**
+   * Schedules front desk employees. For front desk, there should only be one scheduled at a time,
+   * and the hours worked should be spread evenly. In addition, each shift should be at least 2
+   * hours long.
+   *
+   * NOTE: the code right now is gross, but it is helpful for debugging and will be refactored in
+   * the future.
+   */
   public static void scheduleFrontDesk() {
     ArrayList<Availability> onlyFrontDesk = new ArrayList<>();
     for (int i = 0; i < availabilities.size(); i++) {
@@ -304,7 +312,9 @@ public class Scheduler {
   }
 
   /**
-   * Moves the last shift in schedule in order to accommodate another shift made from availability before.
+   * Moves the last shift in schedule in order to accommodate another shift made from availability
+   * before.
+   *
    * @param schedule the schedule of shifts so far
    * @param availability the availability to form a new shift from
    * @param day the day to schedule this new shift
@@ -409,6 +419,13 @@ public class Scheduler {
     }
   }
 
+  /**
+   * Finds the potential start time and end time that a new
+   * @param schedule the shifts scheduled so far
+   * @param index the index of the
+   * @param availability
+   * @return an array containing the potential start time and the potential end time
+   */
   private static int[] findNewPotentialStartTime(List<Shift> schedule, int index,
       Availability availability) {
     int potentialStartTime = availability.startMinute;
@@ -463,6 +480,14 @@ public class Scheduler {
     return availabilityWithLeastEmployeeWorked;
   }
 
+  /**
+   * If permitting, extend the last shift to include startMinute on the current day. This extends
+   * the shift for 15 minutes.
+   *
+   * @param schedule the shifts scheduled so far
+   * @param startMinute the minute to try and extend if possible
+   * @param day the day to extend the shift
+   */
   private static void tryToExtendShift(ArrayList<Shift> schedule,
       int startMinute, int day) {
     Shift toExtend = null;
@@ -499,6 +524,14 @@ public class Scheduler {
     return false;
   }
 
+  /**
+   * Does the given availability conflict with the current schedule, given the start minute of the
+   * potential new shift?
+   *
+   * @param schedule the shifts scheduled so far
+   * @param availability the availability to check against the schedule
+   * @param startMinute the starting minute to check for the conflict
+   */
   public static boolean conflictsWithSchedule(ArrayList<Shift> schedule,
       Availability availability, int startMinute) {
     for (Shift shift : schedule) {
