@@ -5,8 +5,18 @@ import java.util.Iterator;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+/**
+ * This class is for sending custom API requests and parsing the JSON results into data.
+ */
 public final class ParseJSON {
 
+  /**
+   * Send API request for availabilities and unavailabilities between a certain date.
+   *
+   * @return an Array with a List of Availability, List of Unavailability, and a Map of user id to
+   * Employee.
+   * @throws IOException if there is a problem sending the API request
+   */
   public static Object[] toAvailabilitiesUnavailabilitiesAndUserMap() throws IOException {
     ArrayList<Availability> availabilityItems = new ArrayList<>();
     ArrayList<Unavailability> unavailabilityItems = new ArrayList<>();
@@ -69,6 +79,12 @@ public final class ParseJSON {
     return availabilitiesUnavailabilitiesAndUserMap;
   }
 
+  /**
+   * Create an Employee object from the given id. Send an API request to get information about the employee.
+   * @param id the employee id to get information for
+   * @return an Employee object with information about the employee
+   * @throws IOException if there is a problem with the API request
+   */
   public static Employee toEmployee(long id) throws IOException {
     JSONObject employeeInfo = new JSONObject(
         new GetRequest("https://api.wheniwork.com/2/users/" + id).getOutput());
