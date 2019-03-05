@@ -1,31 +1,25 @@
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 public class Scheduler {
 
-  public static HashMap<Long, Employee> idToEmployee;
-  public static ArrayList<Availability> availabilities;
-  public static ArrayList<Availability> unavailabilities;
-  private ArrayList<TimeOff> timeOffs;
+  static HashMap<Long, Employee> idToEmployee;
+  static List<Availability> availabilities;
+  static List<Availability> unavailabilities;
+  static List<TimeOff> timeOffs;
 
   private final static ParseJSON parse = new ParseJSON();
 
-  public Scheduler() throws IOException {
-    this.availabilities = (ArrayList<Availability>) parse
-        .toAvailabilitiesUnavailabilitiesAndUserMap()[0];
-    this.unavailabilities = (ArrayList<Availability>) parse
-        .toAvailabilitiesUnavailabilitiesAndUserMap()[1];
-    this.idToEmployee = (HashMap<Long, Employee>) parse
-        .toAvailabilitiesUnavailabilitiesAndUserMap()[2];
-    this.timeOffs = parse.getTimeOffs(idToEmployee);
+  public Scheduler(List<Availability> availabilities) {
+    this.availabilities = availabilities;
   }
 
   public static void main(String[] args) throws IOException {
-    Scheduler s = new Scheduler();
-    Iterator it = s.idToEmployee.entrySet().iterator();
+    //Scheduler s = new Scheduler();
+    //Iterator it = s.idToEmployee.entrySet().iterator();
     /*while (it.hasNext()) {
       HashMap.Entry pair = (HashMap.Entry) it.next();
       Employee e = (Employee) pair.getValue();
@@ -43,17 +37,19 @@ public class Scheduler {
               .countHours(employeeID) + " " + ava[0] + " " + ava[1]);
       System.out.println();
     }*/
-    scheduleFrontDesk();
+    if (args.length < 2) {
+      throw new IllegalArgumentException("please specify two dates");
+    }
+    Object[] data = parse.toAvailabilitiesUnavailabilitiesAndUserMap(args[0], args[1]);
+    availabilities = (ArrayList<Availability>) data[0];
+    unavailabilities = (ArrayList<Availability>) data[1];
+    idToEmployee = (HashMap<Long, Employee>) data[2];
+    timeOffs = parse.getTimeOffs(idToEmployee);
+
+    printSchedule(scheduleFrontDesk());
   }
 
   public static void getAvailabilitiesAtTime() {
-    int frontDeskMin = 0;
-    int frontDeskMax = 1;
-    int technicianMin = 1;
-    int technicianMax = 2;
-    int hardwareMin = 0;
-    int hardwareMax = 2;
-    //int[][][]
     for (int day = 0; day < 5; day++) {
       System.out.println("Day: " + day);
       for (int startMinute = 480; startMinute < 1140; startMinute += 15) {
@@ -201,7 +197,7 @@ public class Scheduler {
    * NOTE: the code right now is gross, but it is helpful for debugging and will be refactored in
    * the future.
    */
-  public static void scheduleFrontDesk() {
+  public static List<Shift> scheduleFrontDesk() {
     ArrayList<Availability> onlyFrontDesk = new ArrayList<>();
     for (int i = 0; i < availabilities.size(); i++) {
       if (availabilities.get(i).employee.positions.get(0).equals("Front Desk")) {
@@ -279,9 +275,9 @@ public class Scheduler {
             }
           }
         } else {
+          Availability availabilityWithLeastEmployeeWorked = getAvailabilityWithLeastEmployeeWorked(
+              availables);
           if (!shiftAtMinute(schedule, day, startMinute)) {
-            Availability availabilityWithLeastEmployeeWorked = getAvailabilityWithLeastEmployeeWorked(
-                availables);
             if (availabilityWithLeastEmployeeWorked.inSchedule) {
               tryToExtendShift(schedule, startMinute,
                   day); // TODO fix this, shifts can be spread thru availabailities
@@ -292,23 +288,49 @@ public class Scheduler {
               scheduleShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
             }
           } else {
-            // TODO if there is more than 1 availability and there is already a shift scheduled
-            System.out.println("here");
+            Shift shiftConflict = shiftConflictsWithSchedule(schedule,
+                availabilityWithLeastEmployeeWorked);
+            if (shiftConflict.maxEnding >= availabilityWithLeastEmployeeWorked.endMinute) {
+              if (shouldSwitch(shiftConflict, availabilityWithLeastEmployeeWorked, false)) {
+                switchShift(schedule, shiftConflict, availabilityWithLeastEmployeeWorked, day,
+                    startMinute);
+              } else { // if we shouldn't switch it
+                availabilityWithLeastEmployeeWorked.inSchedule = false;
+                shiftConflict.conflicts.add(availabilityWithLeastEmployeeWorked);
+              }
+            } else {
+              // TODO if the conflict has a greater ending time than the scheduled shift
+              if (shouldSwitch(shiftConflict, availabilityWithLeastEmployeeWorked, true)) {
+                switchShift(schedule, shiftConflict, availabilityWithLeastEmployeeWorked, day,
+                    startMinute);
+              } else {
+                availabilityWithLeastEmployeeWorked.inSchedule = false;
+                shiftConflict.conflicts.add(availabilityWithLeastEmployeeWorked);
+              }
+            }
           }
         }
       }
       System.out.println();
     }
+    return schedule;
+  }
 
-    // Printing the schedule
+  /**
+   * Prints the given schedule.
+   * @param schedule the given schedule to print
+   */
+  public static String printSchedule(List<Shift> schedule) {
+    StringBuilder sb = new StringBuilder();
     for (Shift shift : schedule) {
-      System.out.println(
-          "Day: " + shift.day + " -- Start: " + shift.startMinute / 60 + ":"
+      sb.append(
+          "\nDay: " + shift.day + " -- Start: " + shift.startMinute / 60 + ":"
               + shift.startMinute % 60 + " -- End: " + shift.endMinute / 60 + ":"
               + shift.endMinute % 60
               + " -- Employee: " + shift.employee.getFirstName() + " " + shift.employee
               .getLastName() + " -- Minutes worked: " + shift.employee.minutesWorked);
     }
+    return sb.toString().substring(1);
   }
 
   /**
@@ -421,9 +443,9 @@ public class Scheduler {
 
   /**
    * Finds the potential start time and end time that a new
+   *
    * @param schedule the shifts scheduled so far
    * @param index the index of the
-   * @param availability
    * @return an array containing the potential start time and the potential end time
    */
   private static int[] findNewPotentialStartTime(List<Shift> schedule, int index,

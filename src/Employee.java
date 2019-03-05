@@ -1,21 +1,22 @@
 import java.util.ArrayList;
+import java.util.List;
 
 public class Employee {
   private String firstName;
   private String lastName;
   private long id;
-  private ArrayList<Shift> shifts;
-  private ArrayList<Availability> availabilities;
-  private ArrayList<Unavailability> unavailabilities;
-  private ArrayList<TimeOff> timeOffs;
-  ArrayList<String> positions;
+  private List<Shift> shifts;
+  private List<Availability> availabilities;
+  private List<Unavailability> unavailabilities;
+  private List<TimeOff> timeOffs;
+  List<String> positions;
   int minutesWorked;
   int maxHours;
   int softMinHours;
 
-  public Employee(String firstName, String lastName, long id, ArrayList<Shift> shifts,
-      ArrayList<Availability> availabilities, ArrayList<Unavailability> unavailabilities,
-      ArrayList<TimeOff> timeOffs, ArrayList<String> positions, int minutesWorked, int maxHours) {
+  public Employee(String firstName, String lastName, long id, List<Shift> shifts,
+      List<Availability> availabilities, List<Unavailability> unavailabilities,
+      List<TimeOff> timeOffs, List<String> positions, int minutesWorked, int maxHours) {
     this.firstName = firstName;
     this.lastName = lastName;
     this.id = id;
@@ -36,16 +37,20 @@ public class Employee {
     return lastName;
   }
 
-  public ArrayList<Availability> getAvailabilities() {
+  public List<Availability> getAvailabilities() {
     return availabilities;
   }
 
-  public ArrayList<Unavailability> getUnavailabilities() {
+  public List<Unavailability> getUnavailabilities() {
     return unavailabilities;
   }
 
   public void addAvailability(Availability a) {
     availabilities.add(a);
+  }
+
+  public void addAvailabilities(List<Availability> a) {
+    availabilities.addAll(a);
   }
 
   public void addUnavailability(Unavailability u) {

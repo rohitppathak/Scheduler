@@ -13,16 +13,20 @@ public final class ParseJSON {
   /**
    * Send API request for availabilities and unavailabilities between a certain date.
    *
+   * @param startDate the date to start with, formatted as yyyy-mm-dd
+   * @param endDate the date to end with, formatted as yyyy-mm-dd
    * @return an Array with a List of Availability, List of Unavailability, and a Map of user id to
    * Employee.
    * @throws IOException if there is a problem sending the API request
    */
-  public static Object[] toAvailabilitiesUnavailabilitiesAndUserMap() throws IOException {
+  public static Object[] toAvailabilitiesUnavailabilitiesAndUserMap(String startDate,
+      String endDate) throws IOException {
     ArrayList<Availability> availabilityItems = new ArrayList<>();
     ArrayList<Unavailability> unavailabilityItems = new ArrayList<>();
 
     String json = new GetRequest(
-        "https://api.wheniwork.com/2/availabilities/items?start=2019-01-28 00:00:00&end=2019-02-01 23:59:59")
+        "https://api.wheniwork.com/2/availabilities/items?start=" + startDate
+            + " 00:00:00&end=" + endDate + " 23:59:59")
         .getOutput();
     JSONObject list = new JSONObject(json);
     JSONArray items = list.getJSONArray("availabilityitems");
@@ -80,7 +84,9 @@ public final class ParseJSON {
   }
 
   /**
-   * Create an Employee object from the given id. Send an API request to get information about the employee.
+   * Create an Employee object from the given id. Send an API request to get information about the
+   * employee.
+   *
    * @param id the employee id to get information for
    * @return an Employee object with information about the employee
    * @throws IOException if there is a problem with the API request
