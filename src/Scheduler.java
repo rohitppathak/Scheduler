@@ -2,7 +2,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class Scheduler {
 
@@ -46,7 +45,7 @@ public class Scheduler {
     idToEmployee = (HashMap<Long, Employee>) data[2];
     timeOffs = parse.getTimeOffs(idToEmployee);
 
-    printSchedule(scheduleFrontDesk());
+    System.out.println(printSchedule(scheduleFrontDesk()));
   }
 
   public static void getAvailabilitiesAtTime() {
@@ -83,7 +82,7 @@ public class Scheduler {
    * @param day the day to schedule the shift
    * @param startMinute the start minute of the shift
    */
-  public static void scheduleShift(List<Shift> schedule, Availability curAvail, int day,
+  public static Shift scheduleShift(List<Shift> schedule, Availability curAvail, int day,
       int startMinute) {
     int endingMinute = Math.min(curAvail.endMinute, startMinute + 120);
     Shift toSchedule = new Shift(0, day, startMinute,
@@ -96,6 +95,7 @@ public class Scheduler {
     schedule.add(toSchedule);
     curAvail.employee.minutesWorked += (endingMinute - toSchedule.startMinute);
     fixPastConflicts(schedule, day, startMinute, toSchedule.employee);
+    return toSchedule;
   }
 
   /**
@@ -154,7 +154,7 @@ public class Scheduler {
    * @param startMinute the minute to start the shift
    * @param endMinute the minute to end the shift
    */
-  public static void switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
+  public static Shift switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
       int day, int startMinute, int endMinute) {
     int toInsert = schedule.indexOf(shiftConflict);
     schedule.remove(shiftConflict);
@@ -171,6 +171,35 @@ public class Scheduler {
     curAvail.inSchedule = true;
     shiftConflict.associatedAvailability.inSchedule = false;
     fixPastConflicts(schedule, day, startMinute, toSchedule.employee);
+    return toSchedule;
+  }
+
+  static void adjustShifts(Shift toAdjust) {
+    if (toAdjust.conflicts.isEmpty()) {
+      return;
+    }
+    Availability conflict = toAdjust.conflicts.get(0); //TODO update this
+    Shift other = endingAtTime(conflict.scheduledShifts, toAdjust.startMinute);
+    if (other == null) {
+      return;
+    }
+    //TODO this needs to go the other way too
+    while (toAdjust.employee.minutesWorked - other.employee.minutesWorked >= 30
+        && other.endMinute - other.startMinute < 300 && toAdjust.endMinute - toAdjust.startMinute > 120) {
+      toAdjust.endMinute -= 15;
+      other.startMinute -= 15;
+      toAdjust.employee.minutesWorked -= 15;
+      other.employee.minutesWorked += 15;
+    }
+  }
+
+  static Shift endingAtTime(List<Shift> shifts, int endTime) {
+    for (Shift shift : shifts) {
+      if (shift.endMinute == endTime) {
+        return shift;
+      }
+    }
+    return null;
   }
 
   /**
@@ -183,10 +212,10 @@ public class Scheduler {
    * @param day the day to create the shift
    * @param startMinute the minute to start the shift
    */
-  public static void switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
+  public static Shift switchShift(List<Shift> schedule, Shift shiftConflict, Availability curAvail,
       int day, int startMinute) {
     int endingMinute = Math.min(curAvail.endMinute, startMinute + 120);
-    switchShift(schedule, shiftConflict, curAvail, day, startMinute, endingMinute);
+    return switchShift(schedule, shiftConflict, curAvail, day, startMinute, endingMinute);
   }
 
   /**
@@ -206,7 +235,7 @@ public class Scheduler {
     }
     ArrayList<Shift> schedule = new ArrayList<>();
     for (int day = 0; day < 5; day++) {
-      System.out.println("Day: " + day);
+      //System.out.println("Day: " + day);
       for (int startMinute = 480; startMinute < 1140; startMinute += 15) {
         ArrayList<Availability> availables = new ArrayList<>();
         for (int i = 0; i < onlyFrontDesk.size(); i++) {
@@ -228,7 +257,7 @@ public class Scheduler {
             availables.add(onlyFrontDesk.get(i));
           }
         }
-        System.out.println(startMinute);
+        //System.out.println(startMinute);
         for (int i = 0; i < availables.size(); i++) {
           if (availables.get(i).endMinute - 120 < availables.get(i).startMinute) {
             availables.remove(i);
@@ -265,7 +294,6 @@ public class Scheduler {
                 shiftConflict.conflicts.add(curAvail);
               }
             } else {
-              // TODO if the conflict has a greater ending time than the scheduled shift
               if (shouldSwitch(shiftConflict, curAvail, true)) {
                 switchShift(schedule, shiftConflict, curAvail, day, startMinute);
               } else {
@@ -279,45 +307,62 @@ public class Scheduler {
               availables);
           if (!shiftAtMinute(schedule, day, startMinute)) {
             if (availabilityWithLeastEmployeeWorked.inSchedule) {
-              tryToExtendShift(schedule, startMinute,
-                  day); // TODO fix this, shifts can be spread thru availabailities
+              Shift toExtend = tryToExtendShift(schedule, startMinute,
+                  day);
+              if (toExtend != null) {
+                availables.remove(toExtend.associatedAvailability);
+                toExtend.conflicts.addAll(availables);
+              }
             } else if (canShiftBeMoved(schedule, availabilityWithLeastEmployeeWorked, day,
                 startMinute)) {
               moveShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
+              availables.remove(schedule.get(schedule.size() - 1).associatedAvailability);
+              schedule.get(schedule.size() - 1).conflicts.addAll(availables);
             } else {
-              scheduleShift(schedule, availabilityWithLeastEmployeeWorked, day, startMinute);
+              Shift toSchedule = scheduleShift(schedule, availabilityWithLeastEmployeeWorked, day,
+                  startMinute);
+              availables.remove(availabilityWithLeastEmployeeWorked);
+              toSchedule.conflicts.addAll(availables);
             }
           } else {
             Shift shiftConflict = shiftConflictsWithSchedule(schedule,
                 availabilityWithLeastEmployeeWorked);
             if (shiftConflict.maxEnding >= availabilityWithLeastEmployeeWorked.endMinute) {
               if (shouldSwitch(shiftConflict, availabilityWithLeastEmployeeWorked, false)) {
-                switchShift(schedule, shiftConflict, availabilityWithLeastEmployeeWorked, day,
+                Shift toSchedule = switchShift(schedule, shiftConflict,
+                    availabilityWithLeastEmployeeWorked, day,
                     startMinute);
+                availables.remove(toSchedule.associatedAvailability);
+                toSchedule.conflicts.addAll(availables);
               } else { // if we shouldn't switch it
                 availabilityWithLeastEmployeeWorked.inSchedule = false;
-                shiftConflict.conflicts.add(availabilityWithLeastEmployeeWorked);
+                availables.remove(shiftConflict.associatedAvailability);
+                shiftConflict.conflicts.addAll(availables);
               }
             } else {
-              // TODO if the conflict has a greater ending time than the scheduled shift
               if (shouldSwitch(shiftConflict, availabilityWithLeastEmployeeWorked, true)) {
-                switchShift(schedule, shiftConflict, availabilityWithLeastEmployeeWorked, day,
+                Shift toSchedule = switchShift(schedule, shiftConflict,
+                    availabilityWithLeastEmployeeWorked, day,
                     startMinute);
+                availables.remove(toSchedule.associatedAvailability);
+                toSchedule.conflicts.addAll(availables);
               } else {
                 availabilityWithLeastEmployeeWorked.inSchedule = false;
-                shiftConflict.conflicts.add(availabilityWithLeastEmployeeWorked);
+                availables.remove(shiftConflict.associatedAvailability);
+                shiftConflict.conflicts.addAll(availables);
               }
             }
           }
         }
       }
-      System.out.println();
+      //System.out.println();
     }
     return schedule;
   }
 
   /**
    * Prints the given schedule.
+   *
    * @param schedule the given schedule to print
    */
   public static String printSchedule(List<Shift> schedule) {
@@ -403,7 +448,7 @@ public class Scheduler {
    */
   public static void fixPastConflicts(List<Shift> schedule, int day, int startMinute,
       Employee justScheduled) {
-    int index = 0;
+    int index;
     for (index = 0; index < schedule.size(); index++) {
       if (schedule.get(index).employee == justScheduled && schedule.get(index).day == day
           && schedule.get(index).startMinute == startMinute) {
@@ -431,6 +476,8 @@ public class Scheduler {
             && schedule.get(i + 1).endMinute - potentialStartTime > 300) {
           continue;
         }
+
+        adjustShifts(schedule.get(i));
 
         if (shouldSwitch(schedule.get(i), schedule.get(i).conflicts.get(0), potentialStartTime,
             false)) {
@@ -510,7 +557,7 @@ public class Scheduler {
    * @param startMinute the minute to try and extend if possible
    * @param day the day to extend the shift
    */
-  private static void tryToExtendShift(ArrayList<Shift> schedule,
+  private static Shift tryToExtendShift(ArrayList<Shift> schedule,
       int startMinute, int day) {
     Shift toExtend = null;
     for (Shift shift : schedule) {
@@ -527,6 +574,7 @@ public class Scheduler {
         fixPastConflicts(schedule, day, toExtend.startMinute, toExtend.employee);
       }
     }
+    return toExtend;
   }
 
   /**
